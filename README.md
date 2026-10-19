@@ -2,7 +2,15 @@
 
 **Based on:** [bankjaneo/caprine](https://github.com/bankjaneo/caprine), reviewed upstream tag **v2.62.0**.  
 **Output:** a manual GitHub Actions **ZIP**, not a `.paf.exe`.  
-**Status:** Pillow is installed before tests, and the guarded restart patch now accounts for all FIVE `app.relaunch()` calls in the reviewed upstream `source/menu.ts`. **15 offline tests pass; Windows Actions, Facebook login, and portability still require end-to-end verification**.
+**Status:** Pillow is installed before tests, and the guarded restart patch now accounts for all FIVE `app.relaunch()` calls in the reviewed upstream `source/menu.ts`. **16 offline tests pass; Windows Actions, Facebook login, and portability still require end-to-end verification**.
+
+## Current correction — Windows test-file encoding (October 19, 2026)
+
+The latest failed run reports `UnicodeDecodeError: utf-8 codec can't decode byte 0x85` in **Run offline builder tests**. The five-item menu fixture contains an ellipsis. The old test used Windows default text encoding (which can write that character as byte `0x85`), whereas our patch reads UTF-8. The test never reached compilation.
+
+**One-file fix:** Replace **only `tests/test_builder.py`**. Every fixture file read/write now explicitly uses `encoding='utf-8'`, and a new test checks the actual ellipsis bytes. **16 offline tests pass** on the available Linux runtime. All implicit `Path.read_text` and `Path.write_text` calls in the tests have been eliminated.
+
+This fixes the **specific** error in the attached logs. A successful GitHub Actions Windows compilation, Electron security compatibility, Messenger login, and profile portability still need to be verified. Do not describe Caprine as fully portable before those checks pass. If the next run fails at the application build stage, reassess the source patch rather than retrying unverified changes indefinitely.
 
 ## Latest correction — five restart calls in upstream menu.ts
 

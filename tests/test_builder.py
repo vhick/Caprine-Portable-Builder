@@ -26,12 +26,12 @@ class CaprinePortableBuilderTests(unittest.TestCase):
         self.src = self.root / 'upstream'
         (self.src / 'source').mkdir(parents=True)
         (self.src / 'build').mkdir()
-        (self.src / 'package.json').write_text(json.dumps({'name':'caprine','version':'2.62.0'}))
-        (self.src / 'source' / 'config.ts').write_text("import Store from 'electron-store';\nconst store = new Store({schema});")
+        (self.src / 'package.json').write_text(json.dumps({'name':'caprine','version':'2.62.0'}), encoding='utf-8')
+        (self.src / 'source' / 'config.ts').write_text("import Store from 'electron-store';\nconst store = new Store({schema});", encoding='utf-8')
         (self.src / 'source' / 'index.ts').write_text(
             "if (!is.development && config.get('autoUpdate')) {\n"
             "  autoUpdater.checkForUpdatesAndNotify();\n}\n"
-            "webPreferences: {\n\t\t\tnodeIntegration: true,\n}\n")
+            "webPreferences: {\n\t\t\tnodeIntegration: true,\n}\n", encoding='utf-8')
         restart_labels = (
             'Switch to Work Chat…', 'Switch to Messenger…',
             'Delete Settings', 'Delete App Data', 'Relaunch Caprine',
@@ -47,15 +47,23 @@ class CaprinePortableBuilderTests(unittest.TestCase):
         (self.src / 'source' / 'menu.ts').write_text(
             "\t\t\tlabel: 'Launch at Login',\n\t\t\tvisible: !is.linux,\n"
             "\t\t\tlabel: 'Automatic Updates',\n\t\t\ttype: 'checkbox',\n\t\t\tchecked: config.get('autoUpdate'),\n"
-            + relaunch_blocks)
-        (self.src / 'source' / 'util.ts').write_text("\t\tapp.relaunch();\n\t\tapp.quit();\n")
+            + relaunch_blocks, encoding='utf-8')
+        (self.src / 'source' / 'util.ts').write_text("\t\tapp.relaunch();\n\t\tapp.quit();\n", encoding='utf-8')
 
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_unicode_menu_fixture_is_utf8_on_all_platforms(self):
+        # On Windows an implicit cp1252 encoding writes an ellipsis as byte 0x85.
+        # The patch deliberately reads UTF-8: fixtures must explicitly use it.
+        menu = (self.src / 'source' / 'menu.ts').read_bytes()
+        self.assertIn('Switch to Work Chat…'.encode('utf-8'), menu)
+        self.assertNotIn(b'\x85', menu)
+        patch.apply(self.src)
+
     def test_portable_paths_before_electron_store(self):
         patch.apply(self.src)
-        data = (self.src / 'source/config.ts').read_text()
+        data = (self.src / 'source/config.ts').read_text(encoding='utf-8')
         self.assertLess(data.index("app.setPath(key, directory)"), data.index('const store = new Store'))
         self.assertIn("'sessionData'", data)
         self.assertIn("'downloads'", data)
@@ -63,38 +71,38 @@ class CaprinePortableBuilderTests(unittest.TestCase):
 
     def test_updater_guard_and_renderer_isolation(self):
         patch.apply(self.src)
-        data = (self.src / 'source/index.ts').read_text()
+        data = (self.src / 'source/index.ts').read_text(encoding='utf-8')
         self.assertIn('nodeIntegration: false', data)
         self.assertIn('sandbox: false', data)
         self.assertIn('!process.env.CAPRINE_PORTABLE_DATA_DIR', data)
 
     def test_launch_at_login_hidden(self):
         patch.apply(self.src)
-        self.assertIn('visible: !is.linux && !process.env.CAPRINE_PORTABLE_DATA_DIR', (self.src/'source/menu.ts').read_text())
+        self.assertIn('visible: !is.linux && !process.env.CAPRINE_PORTABLE_DATA_DIR', (self.src/'source/menu.ts').read_text(encoding='utf-8'))
 
     def test_restart_guard(self):
         patch.apply(self.src)
-        menu = (self.src/'source/menu.ts').read_text()
+        menu = (self.src/'source/menu.ts').read_text(encoding='utf-8')
         self.assertEqual(menu.count('app.relaunch();'), 5)
         self.assertEqual(menu.count('if (!process.env.CAPRINE_PORTABLE_DATA_DIR) {'), 5)
-        self.assertIn('if (!process.env.CAPRINE_PORTABLE_DATA_DIR)', (self.src/'source/util.ts').read_text())
+        self.assertIn('if (!process.env.CAPRINE_PORTABLE_DATA_DIR)', (self.src/'source/util.ts').read_text(encoding='utf-8'))
 
     def test_sixth_unreviewed_relaunch_is_rejected(self):
         menu_file = self.src / 'source/menu.ts'
-        menu_file.write_text(menu_file.read_text() + '\napp.relaunch();\n')
+        menu_file.write_text(menu_file.read_text(encoding='utf-8') + '\napp.relaunch();\n', encoding='utf-8')
         with self.assertRaisesRegex(RuntimeError, 'Expected 5 app.relaunch calls'):
             patch.apply(self.src)
 
     def test_missing_relaunch_is_rejected(self):
         menu_file = self.src / 'source/menu.ts'
-        content = menu_file.read_text()
-        menu_file.write_text(content.replace('app.relaunch();', '', 1))
+        content = menu_file.read_text(encoding='utf-8')
+        menu_file.write_text(content.replace('app.relaunch();', '', 1), encoding='utf-8')
         with self.assertRaisesRegex(RuntimeError, 'Expected 5 app.relaunch calls'):
             patch.apply(self.src)
 
     def test_changed_restart_action_is_rejected(self):
         menu_file = self.src / 'source/menu.ts'
-        menu_file.write_text(menu_file.read_text().replace('Relaunch Caprine', 'Restart Application'))
+        menu_file.write_text(menu_file.read_text(encoding='utf-8').replace('Relaunch Caprine', 'Restart Application'), encoding='utf-8')
         with self.assertRaisesRegex(RuntimeError, 'Missing or altered restart action'):
             patch.apply(self.src)
 
@@ -104,19 +112,19 @@ class CaprinePortableBuilderTests(unittest.TestCase):
             patch.apply(self.src)
 
     def test_version_fail_closed(self):
-        (self.src/'package.json').write_text(json.dumps({'name':'caprine','version':'2.63.0'}))
+        (self.src/'package.json').write_text(json.dumps({'name':'caprine','version':'2.63.0'}), encoding='utf-8')
         with self.assertRaisesRegex(RuntimeError, 'only been reviewed'):
             patch.apply(self.src)
 
     def test_missing_anchor_fails_closed(self):
-        (self.src/'source/index.ts').write_text('replaced main app implementation')
+        (self.src/'source/index.ts').write_text('replaced main app implementation', encoding='utf-8')
         with self.assertRaisesRegex(RuntimeError, 'compatibility failure'):
             patch.apply(self.src)
 
     def test_package_output_structure(self):
         from PIL import Image
         Image.new('RGBA', (512,512), (80,120,220,255)).save(self.src/'build/icon.png')
-        (self.src/'license').write_text('Sample MIT license placeholder for test')
+        (self.src/'license').write_text('Sample MIT license placeholder for test', encoding='utf-8')
         unpacked = self.src/'dist/win-unpacked/resources'
         unpacked.mkdir(parents=True)
         (unpacked/'app.asar').write_bytes(b'FAKE TEST')
@@ -137,7 +145,7 @@ class CaprinePortableBuilderTests(unittest.TestCase):
             package_mod.package(self.root, '2.62.0', 'arm64', self.root/'artifacts')
 
     def test_build_yml_manual_only(self):
-        workflow = (ROOT/'.github/workflows/build-caprine-portable.yml').read_text()
+        workflow = (ROOT/'.github/workflows/build-caprine-portable.yml').read_text(encoding='utf-8')
         self.assertIn('workflow_dispatch:', workflow)
         self.assertNotIn('schedule:', workflow)
         self.assertNotIn('push:', workflow)
@@ -145,7 +153,7 @@ class CaprinePortableBuilderTests(unittest.TestCase):
         self.assertIn('v2.62.0', workflow)
 
     def test_pillow_installed_before_tests(self):
-        workflow = (ROOT/'.github/workflows/build-caprine-portable.yml').read_text()
+        workflow = (ROOT/'.github/workflows/build-caprine-portable.yml').read_text(encoding='utf-8')
         install = workflow.index('- name: Install Python builder dependencies')
         tests = workflow.index('- name: Run offline builder tests')
         self.assertLess(install, tests)
@@ -154,7 +162,7 @@ class CaprinePortableBuilderTests(unittest.TestCase):
         self.assertEqual(workflow.count('python -m pip install --disable-pip-version-check Pillow==11.3.0'), 1)
 
     def test_launcher_only_child_environment(self):
-        launcher = (ROOT/'builder/CaprinePortable.cs').read_text()
+        launcher = (ROOT/'builder/CaprinePortable.cs').read_text(encoding='utf-8')
         self.assertIn('UseShellExecute = false', launcher)
         self.assertIn('EnvironmentVariables["CAPRINE_PORTABLE_DATA_DIR"]', launcher)
         self.assertIn('@"Data\\Caprine"', launcher)
