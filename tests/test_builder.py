@@ -111,6 +111,15 @@ class CaprinePortableBuilderTests(unittest.TestCase):
         self.assertIn('retention-days: 7', workflow)
         self.assertIn('v2.62.0', workflow)
 
+    def test_pillow_installed_before_tests(self):
+        workflow = (ROOT/'.github/workflows/build-caprine-portable.yml').read_text()
+        install = workflow.index('- name: Install Python builder dependencies')
+        tests = workflow.index('- name: Run offline builder tests')
+        self.assertLess(install, tests)
+        self.assertIn('Pillow==11.3.0', workflow[install:tests])
+        # Dependency should not be installed again later in the build.
+        self.assertEqual(workflow.count('python -m pip install --disable-pip-version-check Pillow==11.3.0'), 1)
+
     def test_launcher_only_child_environment(self):
         launcher = (ROOT/'builder/CaprinePortable.cs').read_text()
         self.assertIn('UseShellExecute = false', launcher)

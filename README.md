@@ -2,7 +2,13 @@
 
 **Based on:** [bankjaneo/caprine](https://github.com/bankjaneo/caprine), reviewed upstream tag **v2.62.0**.  
 **Output:** a manual GitHub Actions **ZIP**, not a `.paf.exe`.  
-**Status:** builder source and offline tests checked; **the Windows Actions job, Facebook login and portability have not yet been tested**.
+**Status:** corrected workflow installs Pillow before builder tests; 12 offline tests pass locally. **The Windows Actions job, Facebook login and portability remain unverified end-to-end**.
+
+## Update to the original builder (Pillow fix)
+
+The first GitHub Actions run failed during offline tests with `ModuleNotFoundError: No module named 'PIL'`. The workflow installed Pillow too late. This revision installs `Pillow==11.3.0` before running any tests and removes the duplicate later installation.
+
+If your builder repository already contains the original kit, replace **only** `.github/workflows/build-caprine-portable.yml`, then **Commit to main > Push origin** in GitHub Desktop. Start a **new** Actions run rather than choosing Re-run jobs on the failed run. Your portable application `Data` folder is unaffected.
 
 ## What you get
 

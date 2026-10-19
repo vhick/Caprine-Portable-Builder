@@ -55,6 +55,16 @@ jobs:
           $meta = Get-Content -Raw upstream/package.json | ConvertFrom-Json
           if ($meta.name -ne 'caprine' -or $meta.version -ne '2.62.0') { throw 'Unexpected upstream package/version' }
 
+      # Package uses "from PIL import Image" for Caprine icon conversion.
+      # Install before tests import builder/package.py (which imports PIL).
+      - name: Install Python builder dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==11.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'Pillow installation failed' }
+          python -c "from PIL import Image; import PIL; print('Pillow ready:', PIL.__version__)"
+          if ($LASTEXITCODE -ne 0) { throw 'Pillow import check failed' }
+
       - name: Run offline builder tests
         shell: pwsh
         run: python -m unittest discover -s tests -v
@@ -86,8 +96,6 @@ jobs:
       - name: Prepare original icon and launcher
         shell: pwsh
         run: |
-          python -m pip install Pillow==11.3.0
-          if ($LASTEXITCODE -ne 0) { throw 'Pillow installation failed' }
           python builder/create_icon.py
           if ($LASTEXITCODE -ne 0) { throw 'Official icon preparation failed' }
           & ./builder/compile_launcher.ps1
