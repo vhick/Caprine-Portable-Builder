@@ -6,6 +6,7 @@ unportable app after source changes.
 """
 from __future__ import annotations
 import argparse
+import re
 from pathlib import Path
 
 
@@ -75,13 +76,37 @@ if (portableData) {
     replace_once(menu,
         "\t\t\tlabel: 'Automatic Updates',\n\t\t\ttype: 'checkbox',\n\t\t\tchecked: config.get('autoUpdate'),",
         "\t\t\tlabel: 'Automatic Updates',\n\t\t\ttype: 'checkbox',\n\t\t\tvisible: !process.env.CAPRINE_PORTABLE_DATA_DIR,\n\t\t\tchecked: config.get('autoUpdate'),")
-    # All five known restart operations (four in menu.ts and one in util.ts) must not start the unpacked inner EXE,
-    # since that would lack the portable environment and write to host AppData.
-    relaunch_count = menu.read_text(encoding='utf-8').count('app.relaunch();')
-    if relaunch_count != 4:
-        raise RuntimeError(f'Expected four app.relaunch calls in menu.ts, found {relaunch_count}')
+    # The reviewed v2.62.0 menu has FIVE restart actions (including the
+    # "Relaunch Caprine" menu command). Guard them all in portable mode.
     text = menu.read_text(encoding='utf-8')
-    text = text.replace('app.relaunch();', 'if (!process.env.CAPRINE_PORTABLE_DATA_DIR) {\n\t\t\t\t\tapp.relaunch();\n\t\t\t\t}', 4)
+    restart_labels = (
+        'Switch to Work Chat…', 'Switch to Messenger…',
+        'Delete Settings', 'Delete App Data', 'Relaunch Caprine',
+    )
+    count = text.count('app.relaunch();')
+    if count != len(restart_labels):
+        raise RuntimeError(
+            f'Expected {len(restart_labels)} app.relaunch calls in menu.ts, '
+            f'found {count}. Review upstream before building.'
+        )
+    # Each known command must still contain the same relaunch + quit pair.
+    for label in restart_labels:
+        pattern = (r"label:\s*'" + re.escape(label)
+                   + r"'(?:(?!label:)[\s\S]){0,300}?app\.relaunch\(\);\s*app\.quit\(\);")
+        if not re.search(pattern, text):
+            raise RuntimeError(f'Missing or altered restart action: {label}')
+    relaunch_pattern = re.compile(r'(?m)^([\t ]*)app\.relaunch\(\);[\t ]*$')
+    if len(relaunch_pattern.findall(text)) != len(restart_labels):
+        raise RuntimeError('An upstream relaunch statement has unexpected formatting')
+    text, changed = relaunch_pattern.subn(
+        lambda match: (
+            match.group(1) + 'if (!process.env.CAPRINE_PORTABLE_DATA_DIR) {\n'
+            + match.group(1) + '\tapp.relaunch();\n'
+            + match.group(1) + '}'
+        ), text
+    )
+    if changed != len(restart_labels):
+        raise RuntimeError('Not all five restart operations were protected')
     menu.write_text(text, encoding='utf-8')
     replace_once(util,
         '\t\tapp.relaunch();\n\t\tapp.quit();',

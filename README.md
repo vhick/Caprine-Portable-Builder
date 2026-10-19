@@ -2,7 +2,21 @@
 
 **Based on:** [bankjaneo/caprine](https://github.com/bankjaneo/caprine), reviewed upstream tag **v2.62.0**.  
 **Output:** a manual GitHub Actions **ZIP**, not a `.paf.exe`.  
-**Status:** corrected workflow installs Pillow before builder tests; 12 offline tests pass locally. **The Windows Actions job, Facebook login and portability remain unverified end-to-end**.
+**Status:** Pillow is installed before tests, and the guarded restart patch now accounts for all FIVE `app.relaunch()` calls in the reviewed upstream `source/menu.ts`. **15 offline tests pass; Windows Actions, Facebook login, and portability still require end-to-end verification**.
+
+## Latest correction — five restart calls in upstream menu.ts
+
+The subsequent GitHub Actions log failed in the **Apply guarded portable source modifications** step:
+
+```text
+RuntimeError: Expected four app.relaunch calls in menu.ts, found 5
+```
+
+The upstream **v2.62.0** menu has five restart operations: **Switch to Work Chat**, **Switch to Messenger**, **Delete Settings**, **Delete App Data**, and **Relaunch Caprine**. The original test fixture incorrectly included four. This release fixes both `builder/patch_upstream.py` and `tests/test_builder.py`, checks each of the five actions by name, and blocks unreviewed extra or missing restart calls.
+
+**If your builder already has the Pillow fix:** replace ONLY `builder/patch_upstream.py` and `tests/test_builder.py`, then commit, push, and start a **NEW** GitHub Actions run. Keep `v2.62.0` selected. You don't need to replace the workflow or your launcher. No actual Caprine user data is modified.
+
+Verification: **15 offline tests pass**, including tests for missing/extra restart calls and modified menu labels. This does not yet establish that the Windows build or Messenger login succeeds.
 
 ## Update to the original builder (Pillow fix)
 

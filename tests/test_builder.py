@@ -32,10 +32,22 @@ class CaprinePortableBuilderTests(unittest.TestCase):
             "if (!is.development && config.get('autoUpdate')) {\n"
             "  autoUpdater.checkForUpdatesAndNotify();\n}\n"
             "webPreferences: {\n\t\t\tnodeIntegration: true,\n}\n")
+        restart_labels = (
+            'Switch to Work Chat…', 'Switch to Messenger…',
+            'Delete Settings', 'Delete App Data', 'Relaunch Caprine',
+        )
+        relaunch_blocks = ''.join(
+            f"\t\t\tlabel: '{label}',\n"
+            "\t\t\tclick() {\n"
+            "\t\t\t\tapp.relaunch();\n"
+            "\t\t\t\tapp.quit();\n"
+            "\t\t\t},\n"
+            for label in restart_labels
+        )
         (self.src / 'source' / 'menu.ts').write_text(
             "\t\t\tlabel: 'Launch at Login',\n\t\t\tvisible: !is.linux,\n"
             "\t\t\tlabel: 'Automatic Updates',\n\t\t\ttype: 'checkbox',\n\t\t\tchecked: config.get('autoUpdate'),\n"
-            + ('app.relaunch();\n' * 4))
+            + relaunch_blocks)
         (self.src / 'source' / 'util.ts').write_text("\t\tapp.relaunch();\n\t\tapp.quit();\n")
 
     def tearDown(self):
@@ -62,8 +74,29 @@ class CaprinePortableBuilderTests(unittest.TestCase):
 
     def test_restart_guard(self):
         patch.apply(self.src)
-        self.assertEqual((self.src/'source/menu.ts').read_text().count('app.relaunch();'), 4)
+        menu = (self.src/'source/menu.ts').read_text()
+        self.assertEqual(menu.count('app.relaunch();'), 5)
+        self.assertEqual(menu.count('if (!process.env.CAPRINE_PORTABLE_DATA_DIR) {'), 5)
         self.assertIn('if (!process.env.CAPRINE_PORTABLE_DATA_DIR)', (self.src/'source/util.ts').read_text())
+
+    def test_sixth_unreviewed_relaunch_is_rejected(self):
+        menu_file = self.src / 'source/menu.ts'
+        menu_file.write_text(menu_file.read_text() + '\napp.relaunch();\n')
+        with self.assertRaisesRegex(RuntimeError, 'Expected 5 app.relaunch calls'):
+            patch.apply(self.src)
+
+    def test_missing_relaunch_is_rejected(self):
+        menu_file = self.src / 'source/menu.ts'
+        content = menu_file.read_text()
+        menu_file.write_text(content.replace('app.relaunch();', '', 1))
+        with self.assertRaisesRegex(RuntimeError, 'Expected 5 app.relaunch calls'):
+            patch.apply(self.src)
+
+    def test_changed_restart_action_is_rejected(self):
+        menu_file = self.src / 'source/menu.ts'
+        menu_file.write_text(menu_file.read_text().replace('Relaunch Caprine', 'Restart Application'))
+        with self.assertRaisesRegex(RuntimeError, 'Missing or altered restart action'):
+            patch.apply(self.src)
 
     def test_patch_fail_closed_on_second_application(self):
         patch.apply(self.src)
