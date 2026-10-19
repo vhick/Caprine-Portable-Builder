@@ -1,0 +1,110 @@
+name: Build Caprine True Portable ZIP (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Official reviewed Caprine tag (initially v2.62.0)"
+        required: true
+        type: string
+        default: "v2.62.0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caprine-portable-manual
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout your builder scripts
+        uses: actions/checkout@v4
+
+      - name: Checkout upstream Caprine release
+        uses: actions/checkout@v4
+        with:
+          repository: bankjaneo/caprine
+          ref: ${{ inputs.upstream_ref }}
+          path: upstream
+          persist-credentials: false
+
+      - name: Python for tests, icons and packaging
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js for the upstream build
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: upstream/package-lock.json
+
+      - name: Verify review version
+        shell: pwsh
+        env:
+          UPSTREAM_TAG: ${{ inputs.upstream_ref }}
+        run: |
+          if ($env:UPSTREAM_TAG -ne 'v2.62.0') {
+            throw 'Only v2.62.0 has reviewed source patches. Do not bypass this check; update patches for a new release.'
+          }
+          $meta = Get-Content -Raw upstream/package.json | ConvertFrom-Json
+          if ($meta.name -ne 'caprine' -or $meta.version -ne '2.62.0') { throw 'Unexpected upstream package/version' }
+
+      - name: Run offline builder tests
+        shell: pwsh
+        run: python -m unittest discover -s tests -v
+
+      - name: Apply guarded portable source modifications
+        shell: pwsh
+        run: python builder/patch_upstream.py upstream
+
+      - name: Install upstream dependencies using lockfile
+        shell: pwsh
+        working-directory: upstream
+        run: |
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+
+      - name: Build TypeScript and unpacked Windows app
+        shell: pwsh
+        working-directory: upstream
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'TypeScript compilation failed' }
+          npx --no-install electron-builder --win --x64 --dir --publish never
+          if ($LASTEXITCODE -ne 0) { throw 'electron-builder failed' }
+          if (-not (Test-Path 'dist/win-unpacked/Caprine.exe')) { throw 'Caprine.exe not produced' }
+          if (-not (Test-Path 'dist/win-unpacked/resources/app.asar')) { throw 'app.asar missing' }
+
+      - name: Prepare original icon and launcher
+        shell: pwsh
+        run: |
+          python -m pip install Pillow==11.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'Pillow installation failed' }
+          python builder/create_icon.py
+          if ($LASTEXITCODE -ne 0) { throw 'Official icon preparation failed' }
+          & ./builder/compile_launcher.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher compilation failed' }
+
+      - name: Create ZIP (App Data Other root launcher)
+        shell: pwsh
+        run: |
+          python builder/package.py --version 2.62.0 --arch x64
+          if ($LASTEXITCODE -ne 0) { throw 'ZIP packaging failed' }
+          python builder/verify_zip.py artifacts/Caprine-v2.62.0-Win-x64-Portable.zip
+          if ($LASTEXITCODE -ne 0) { throw 'ZIP integrity check failed' }
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Caprine-TruePortable-v2.62.0-x64
+          path: artifacts/Caprine-v2.62.0-Win-x64-Portable.zip
+          if-no-files-found: error
+          retention-days: 7

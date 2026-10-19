@@ -1,0 +1,11 @@
+# Never accidentally commit a portable application's personal data.
+Data/
+**/Data/
+artifacts/
+stage/
+upstream/
+CaprinePortable.exe
+build-icon.ico
+*.log
+__pycache__/
+*.pyc
